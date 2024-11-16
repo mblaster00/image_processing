@@ -66,15 +66,21 @@ class GenGAN():
 
 
 
-    def generate(self, ske):           # TP-TODO
-        """ generator of image from skeleton """
-        pass
-        # ske_t = torch.from_numpy( ske.__array__(reduced=True).flatten() )
-        # ske_t = ske_t.to(torch.float32)
-        # ske_t = ske_t.reshape(1,Skeleton.reduced_dim,1,1) # ske.reshape(1,Skeleton.full_dim,1,1)
-        # normalized_output = self.netG(ske_t)
-        # res = self.dataset.tensor2image(normalized_output[0])
-        # return res
+    def generate(self, ske):
+        """ Generator of image from skeleton """
+        # Convert the skeleton to a PyTorch tensor
+        ske_t = torch.from_numpy(ske.__array__(reduced=True).flatten())  # Convert to numpy and flatten
+        ske_t = ske_t.to(torch.float32)  # Ensure it's in the correct data type
+        ske_t = ske_t.reshape(1, Skeleton.reduced_dim, 1, 1)  # Reshape to match generator input shape
+
+        # Generate the image
+        with torch.no_grad():  # Ensure no gradients are computed (inference mode)
+            normalized_output = self.netG(ske_t)  # Pass through the generator
+
+        # Convert the output tensor to an image
+        res = self.dataset.tensor2image(normalized_output[0])  # Assume `tensor2image` handles denormalization
+        return res
+
 
 
 

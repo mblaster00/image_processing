@@ -80,14 +80,17 @@ class VideoSkeletonDataset(Dataset):
 
 
     def tensor2image(self, normalized_image):
-        numpy_image = normalized_image.detach().numpy()
-        # Réorganiser les dimensions (C, H, W) en (H, W, C)
-        numpy_image = np.transpose(numpy_image, (1, 2, 0))
-        # passage a des images cv2 pour affichage
-        numpy_image = cv2.cvtColor(np.array(numpy_image), cv2.COLOR_RGB2BGR)
-        denormalized_image = numpy_image * np.array([0.5, 0.5, 0.5]) + np.array([0.5, 0.5, 0.5])
-        denormalized_output = denormalized_image * 1
-        return denormalized_output
+        # Convert normalized tensor to NumPy array
+        numpy_image = normalized_image.detach().cpu().numpy()
+        numpy_image = np.transpose(numpy_image, (1, 2, 0))  # Rearrange (C, H, W) to (H, W, C)
+
+        # Denormalize from [-1, 1] to [0, 255]
+        denormalized_image = (numpy_image + 1) * 127.5
+        denormalized_image = denormalized_image.astype(np.uint8)  # Convert to uint8
+
+        # Convert to BGR format for OpenCV visualization
+        denormalized_image = cv2.cvtColor(denormalized_image, cv2.COLOR_RGB2BGR)
+        return denormalized_image
 
 
 
@@ -104,20 +107,33 @@ def init_weights(m):
 
 
 class GenNNSkeToImage(nn.Module):
-    """ class that Generate a new image from videoSke from a new skeleton posture
-       Fonc generator(Skeleton)->Image
+    """ Class that generates an image from a skeleton posture.
+        Generator(Skeleton) -> Image
     """
     def __init__(self):
         super(GenNNSkeToImage, self).__init__()
         self.input_dim = Skeleton.reduced_dim
         self.model = nn.Sequential(
-            # TP-TODO
+            nn.ConvTranspose2d(self.input_dim, 256, 4, 1, 0),  # (B, 256, 4, 4)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, 4, 2, 1),            # (B, 128, 8, 8)
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),             # (B, 64, 16, 16)
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),              # (B, 32, 32, 32)
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 3, 4, 2, 1),               # (B, 3, 64, 64)
+            nn.Tanh()                                         # Output in range [-1, 1]
         )
         print(self.model)
 
     def forward(self, z):
-        img = self.model(z)
-        return img
+        return self.model(z)
+
 
 
 
@@ -127,15 +143,32 @@ class GenNNSkeImToImage(nn.Module):
        Fonc generator(Skeleton)->Image
     """
     def __init__(self):
-        super(GenNNSkeToImage, self).__init__()
-        self.input_dim = Skeleton.reduced_dim
+        super(GenNNSkeImToImage, self).__init__()
+        self.input_channels = 3  # RGB image
         self.model = nn.Sequential(
-            # TP-TODO
+            nn.Conv2d(self.input_channels, 64, kernel_size=3, stride=1, padding=1),  # Input convolution layer
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),  # Pooling to reduce spatial dimensions
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),  # 2nd convolution layer
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),  # 3rd convolution layer
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
+
+            nn.Flatten(),
+            nn.Linear(256 * (64 // 8) * (64 // 8), 512),  # Fully connected layer
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 64 * 64 * 3),  # Output layer (RGB image)
+            nn.Tanh()  # Ensure the output values are between -1 and 1 (scaled to [0, 1] later)
         )
-        print(self.model)
 
     def forward(self, z):
-        img = self.model(z)
+        flat_output = self.model(z)
+        # Reshape to (C, H, W) for RGB image
+        img = flat_output.view(-1, 3, 64, 64)  # Batch size x 3 x 64 x 64
         return img
 
 
@@ -179,20 +212,72 @@ class GenVanillaNN():
             self.netG = torch.load(self.filename)
 
 
-    def train(self, n_epochs=20):
-        # TP-TODO
-        pass
+    def train(self, n_epochs=20, lr=0.0002, beta1=0.5):
+        """Train the generator model."""
+        print("Starting training...")
+
+        # Loss function
+        criterion = nn.MSELoss()
+
+        # Optimizer
+        optimizer = torch.optim.Adam(self.netG.parameters(), lr=lr, betas=(beta1, 0.999))
+
+        # Move model to the device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.netG.to(device)
+
+        # Loop through epochs
+        for epoch in range(n_epochs):
+            epoch_loss = 0.0
+            for i, (ske, image) in enumerate(self.dataloader):
+                # Move data to the device
+                ske = ske.to(device)
+                image = image.to(device)
+
+                # Zero the parameter gradients
+                optimizer.zero_grad()
+
+                # Forward pass: generate images
+                generated_image = self.netG(ske)
+
+                # Compute loss
+                loss = criterion(generated_image, image)
+
+                # Backward pass: update weights
+                loss.backward()
+                optimizer.step()
+
+                # Accumulate loss for the epoch
+                epoch_loss += loss.item()
+
+                # Print progress every 10 batches
+                if i % 10 == 0:
+                    print(f"Epoch [{epoch+1}/{n_epochs}], Batch [{i+1}/{len(self.dataloader)}], Loss: {loss.item():.4f}")
+
+            # Print epoch loss
+            print(f"Epoch [{epoch+1}/{n_epochs}] completed with Loss: {epoch_loss/len(self.dataloader):.4f}")
+
+        # Save the model after training
+        print(f"Training completed. Saving model to {self.filename}")
+        torch.save(self.netG, self.filename)
+
 
 
     def generate(self, ske):
-        """ generator of image from skeleton """
-        # TP-TODO
-        pass
-        # ske_t = self.dataset.preprocessSkeleton(ske)
-        # ske_t_batch = ske_t.unsqueeze(0)        # make a batch
-        # normalized_output = self.netG(ske_t_batch)
-        # res = self.dataset.tensor2image(normalized_output[0])       # get image 0 from the batch
-        # return res
+        """Generate an image from a skeleton"""
+        print("Generating image for skeleton:", ske)
+
+        # Preprocess the skeleton into a tensor
+        ske_t = self.dataset.preprocessSkeleton(ske)
+        ske_t_batch = ske_t.unsqueeze(0)  # Add a batch dimension (batch size = 1)
+
+        # Pass the skeleton through the generator network
+        normalized_output = self.netG(ske_t_batch)
+
+        # Convert the generated tensor to an image
+        res = self.dataset.tensor2image(normalized_output[0])  # Get the first (and only) batch image
+        return res
+
 
 
 
