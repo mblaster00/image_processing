@@ -10,12 +10,6 @@ This project implements a Dance Posture-to-Image generation system using Vanilla
 1. [Overview](#overview)  
 2. [Features](#features)  
 3. [Installation](#installation)  
-4. [Usage](#usage)  
-5. [Project Structure](#project-structure)  
-6. [Technologies Used](#technologies-used)  
-7. [Future Improvements](#future-improvements)  
-8. [License](#license)
-
 ---
 
 ## Overview
