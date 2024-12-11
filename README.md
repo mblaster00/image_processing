@@ -46,5 +46,5 @@ This project processes video skeleton data to generate realistic images of dance
 
 1. Clone the repository:  
    ```bash
-   git clone https://github.com/yourusername/projectname.git
+   git clone https://github.com/mblaster00/image_processing.git
    cd image_processing
