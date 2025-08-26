@@ -1,4 +1,4 @@
-# Mock Exam - Deep Learning & Image Processing
+# Mock - Deep Learning & Image Processing
 ## Master 2 - IA, ID3D, DISS
 ### Duration: 2 hours - No documents allowed
 
