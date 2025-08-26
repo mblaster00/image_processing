@@ -1,4 +1,4 @@
-# Master's Level Deep Learning Exam Study Guide
+# Deep Learning Study Guide
 
 Based on analysis of all three instructors' course materials, here are focused study paragraphs emphasizing core principles for your January 17, 2025 exam.
 
