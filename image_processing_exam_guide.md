@@ -1,5 +1,4 @@
 # Complete Deep Learning & Image Processing Study Guide
-## Master 2 - IA, ID3D, DISS - January 2025 Exam
 
 ---
 
